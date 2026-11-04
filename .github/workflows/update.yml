@@ -1,0 +1,59 @@
+# 1時間ごとに空き状況を取得して docs/data.json を更新し、docs フォルダを GitHub Pages に公開する
+name: 空き状況の更新
+
+on:
+  schedule:
+    - cron: "5 * * * *"  # 毎時5分（GitHub の混雑で数分〜数十分遅れることがある）
+  workflow_dispatch:      # Actions タブの「Run workflow」から手動でも実行できる
+  push:
+    branches: [main]
+    paths: ["docs/index.html", "scrape.py", ".github/workflows/update.yml"]
+
+permissions:
+  contents: write  # data.json をリポジトリに保存するため
+  pages: write
+  id-token: write
+
+concurrency:
+  group: update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Playwright と Chromium のインストール
+        run: |
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: 空き状況の取得
+        run: python scrape.py
+
+      # 更新をリポジトリにも残す（一定期間更新が無いと GitHub が自動実行を止めるのを防ぐ）
+      - name: data.json を保存
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/data.json
+          if ! git diff --cached --quiet; then
+            git commit -m "空き状況を更新"
+            git push
+          fi
+
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: docs
+      - id: deploy
+        uses: actions/deploy-pages@v5
