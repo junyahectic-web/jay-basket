@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>藤沢 バスケ空き検索</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --text:#1d2330; --muted:#667085; --line:#e3e6eb; --head:#fafbfc;
+          --accent:#e8710a; --holiday:#d92d20; --sat:#1f6fd1; --warn-bg:#fff4e5; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14161a; --card:#1d2026; --text:#e8eaee; --muted:#9aa3b2; --line:#30343c; --head:#23262d;
+            --holiday:#ff6b5e; --sat:#6aa8ff; --warn-bg:#3a2a12; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  a { color: var(--accent); }
+  .lead { color: var(--muted); margin: 0 0 20px; font-size: .9rem; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px 24px; }
+  fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+  legend { font-weight: 600; margin-bottom: 8px; }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  select, input[type=number] { font-size: 1rem; padding: 6px 8px; border: 1px solid var(--line);
+                               border-radius: 8px; background: var(--card); color: var(--text); }
+  input[type=number] { width: 90px; }
+  .check { display: flex; align-items: center; gap: 8px; margin: 6px 0; cursor: pointer; }
+  .check input { width: 18px; height: 18px; flex: none; }
+  .note { color: var(--muted); font-size: .8rem; margin: 6px 0 0; }
+  #status { margin: 20px 0 8px; }
+  .summary { font-weight: 600; margin: 0; }
+  .updated { color: var(--muted); font-size: .8rem; margin: 4px 0 0; }
+  .warn { background: var(--warn-bg); border-radius: 8px; padding: 8px 12px; font-size: .85rem; margin-top: 8px; }
+  .error { color: var(--holiday); font-weight: 600; }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; margin-top: 8px; }
+  table { width: 100%; border-collapse: collapse; background: var(--card); }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: .92rem; }
+  th { background: var(--head); color: var(--muted); font-weight: 600; white-space: nowrap; }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.day { white-space: nowrap; font-weight: 600; }
+  td.day.holiday { color: var(--holiday); }
+  td.day.sat { color: var(--sat); }
+  .muted { color: var(--muted); font-size: .8rem; }
+  @media (max-width: 640px) {
+    th, td { padding: 8px; font-size: .85rem; }
+    th:nth-child(5), td:nth-child(5) { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>藤沢市 バスケ空き検索</h1>
+  <p class="lead">藤沢市公共施設予約システムで、バスケットボール・ミニバスケットボールができる室場の空き枠を探します。
+    予約は<a href="https://fujisawacity.service-now.com/facilities_reservation" target="_blank" rel="noopener">予約システム</a>で行ってください。</p>
+
+  <form id="form" class="card">
+    <div class="grid">
+      <fieldset>
+        <legend>期間</legend>
+        <div class="row">今日から <input type="number" name="days" value="60" min="1" max="120"> 日間</div>
+      </fieldset>
+      <fieldset>
+        <legend>火曜・木曜（祝日を除く）</legend>
+        <div class="row"><select name="weekday_start" data-default="17:00"></select> 〜
+                         <select name="weekday_end" data-default="19:00"></select></div>
+      </fieldset>
+      <fieldset>
+        <legend>土日祝日</legend>
+        <div class="row"><select name="holiday_start" data-default="09:00"></select> 〜
+                         <select name="holiday_end" data-default="19:00"></select></div>
+      </fieldset>
+      <fieldset>
+        <legend>対象に加える室場</legend>
+        <label class="check"><input type="checkbox" name="akibadai" checked> 秋葉台文化体育館 サブアリーナ（第2体育室）</label>
+        <label class="check"><input type="checkbox" name="chichibu" checked> 秩父宮記念体育館 サブアリーナ</label>
+        <p class="note">秋葉台・秩父宮は、サブアリーナ以外の室場は対象外です。</p>
+      </fieldset>
+    </div>
+    <p class="note">条件を変えるとすぐに結果が変わります。指定した時間帯に収まる予約枠
+      （例: 17:00〜19:00 なら「17:00-19:00」の枠）だけを表示します。</p>
+  </form>
+
+  <div id="status"></div>
+  <div id="results"></div>
+</main>
+<script>
+const YOUBI = '日月火水木金土';
+const WEEKDAYS = [2, 4];  // 火曜・木曜（日曜=0）
+const form = document.getElementById('form');
+const statusBox = document.getElementById('status');
+const resultsBox = document.getElementById('results');
+let data = null;
+
+for (const select of form.querySelectorAll('select')) {
+  for (let h = 6; h <= 22; h++) {
+    const t = String(h).padStart(2, '0') + ':00';
+    select.append(new Option(t, t, false, t === select.dataset.default));
+  }
+}
+
+function el(tag, attrs = {}, text) {
+  const e = document.createElement(tag);
+  Object.assign(e, attrs);
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+// 日本時間の今日（YYYY-MM-DD）と、日付文字列の計算
+const todayJst = () => new Intl.DateTimeFormat('sv-SE', {timeZone: 'Asia/Tokyo'}).format(new Date());
+const toDate = s => new Date(s + 'T00:00:00Z');
+const addDays = (s, n) => new Date(toDate(s).getTime() + n * 86400000).toISOString().slice(0, 10);
+
+function render() {
+  if (!data) return;
+  const f = Object.fromEntries(new FormData(form));
+  const ranges = {weekday: [f.weekday_start, f.weekday_end], holiday: [f.holiday_start, f.holiday_end]};
+  statusBox.replaceChildren();
+  resultsBox.replaceChildren();
+
+  for (const [key, label] of [['weekday', '火曜・木曜'], ['holiday', '土日祝日']]) {
+    if (ranges[key][0] >= ranges[key][1]) {
+      statusBox.append(el('p', {className: 'error'}, `${label}の時間帯は、開始より後の終了時刻を選んでください`));
+      return;
+    }
+  }
+  const days = Math.max(1, Math.min(120, parseInt(f.days, 10) || 1));
+  const start = todayJst();
+  const end = addDays(start, days - 1);
+
+  const rows = [];
+  for (const [i, date, period] of data.slots) {
+    const room = data.rooms[i];
+    if (date < start || date > end) continue;
+    if (room.sub_arena && !f[room.sub_arena]) continue;
+    const dow = toDate(date).getUTCDay();
+    const holiday = data.holidays[date];
+    const range = (dow === 0 || dow === 6 || holiday) ? ranges.holiday
+                : WEEKDAYS.includes(dow) ? ranges.weekday : null;
+    const [from, to] = period.split('-');
+    if (!range || from < range[0] || to > range[1]) continue;
+    const [, m, d] = date.split('-').map(Number);
+    rows.push({date, period, room, label: `${m}/${d}（${YOUBI[dow]}${holiday ? '・' + holiday : ''}）`,
+               kind: holiday || dow === 0 ? 'holiday' : dow === 6 ? 'sat' : ''});
+  }
+  rows.sort((a, b) => (a.date + a.period + a.room.facility + a.room.room)
+                      .localeCompare(b.date + b.period + b.room.facility + b.room.room));
+
+  const shownEnd = end < data.end ? end : data.end;
+  statusBox.append(el('p', {className: 'summary'},
+    `期間 ${start.replaceAll('-', '/')} 〜 ${shownEnd.replaceAll('-', '/')}　空き ${rows.length} 枠`));
+  const updated = new Date(data.updated);
+  statusBox.append(el('p', {className: 'updated'},
+    `空き状況の取得: ${updated.toLocaleString('ja-JP', {timeZone: 'Asia/Tokyo', month: 'numeric', day: 'numeric',
+                                                         hour: '2-digit', minute: '2-digit'})}（1時間ごとに更新）`));
+  if (Date.now() - updated.getTime() > 3 * 3600 * 1000) {
+    statusBox.append(el('div', {className: 'warn'}, '空き状況が3時間以上更新されていません。予約システムで最新の状況を確認してください。'));
+  }
+  if (end > data.end) {
+    statusBox.append(el('div', {className: 'warn'}, `空き状況は ${data.end.replaceAll('-', '/')} までの分しかありません。`));
+  }
+
+  if (!rows.length) {
+    resultsBox.append(el('p', {className: 'muted'}, '指定した条件に合う空き枠はありませんでした。'));
+    return;
+  }
+  const table = el('table');
+  const head = el('tr');
+  for (const h of ['日付', '時間帯', '施設', '室場', '種目']) head.append(el('th', {}, h));
+  const thead = el('thead');
+  thead.append(head);
+  const body = el('tbody');
+  for (const r of rows) {
+    const tr = el('tr');
+    tr.append(el('td', {className: ('day ' + r.kind).trim()}, r.label));
+    tr.append(el('td', {}, r.period));
+    tr.append(el('td', {}, r.room.facility));
+    tr.append(el('td', {}, r.room.room));
+    tr.append(el('td', {className: 'muted'}, r.room.purposes));
+    body.append(tr);
+  }
+  table.append(thead, body);
+  const wrap = el('div', {className: 'table-wrap'});
+  wrap.append(table);
+  resultsBox.append(wrap);
+}
+
+form.addEventListener('input', render);
+form.addEventListener('submit', ev => ev.preventDefault());
+
+statusBox.append(el('p', {className: 'muted'}, '空き状況を読み込み中…'));
+fetch('data.json?t=' + Date.now())
+  .then(res => { if (!res.ok) throw new Error(res.status); return res.json(); })
+  .then(json => { data = json; render(); })
+  .catch(() => {
+    statusBox.replaceChildren(el('p', {className: 'error'}, '空き状況を読み込めませんでした。しばらくしてから開き直してください。'));
+  });
+</script>
+</body>
+</html>
